@@ -1,0 +1,22 @@
+{
+  "name": "digital-tenkizu",
+  "version": "1.0.0",
+  "description": "このプロジェクトは、今までは手書きで作成していた天気図をブラウザ上で作成できるようにするためのものです。",
+  "main": "index.js",
+  "private": true,
+  "scripts": {
+    "build": "webpack",
+    "watch": "webpack -w"
+  },
+  "keywords": [],
+  "author": "kamataryo (https://github.com/kamataryo)",
+  "license": "MIT",
+  "devDependencies": {
+    "copy-webpack-plugin": "^11.0.0",
+    "html-webpack-plugin": "^5.5.3",
+    "ts-loader": "^9.5.0",
+    "typescript": "^5.2.2",
+    "webpack": "^5.88.2",
+    "webpack-cli": "^5.1.4"
+  }
+}
