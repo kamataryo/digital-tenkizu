@@ -120,5 +120,3 @@ dist
 
 data/*
 !data/.gitkeep
-
-public/tiles
