@@ -12,11 +12,17 @@
   "author": "kamataryo (https://github.com/kamataryo)",
   "license": "MIT",
   "devDependencies": {
+    "@types/proj4": "^2.5.3",
     "copy-webpack-plugin": "^11.0.0",
     "html-webpack-plugin": "^5.5.3",
     "ts-loader": "^9.5.0",
     "typescript": "^5.2.2",
     "webpack": "^5.88.2",
     "webpack-cli": "^5.1.4"
+  },
+  "dependencies": {
+    "@turf/turf": "^6.5.0",
+    "gl-matrix": "^3.4.3",
+    "proj4": "^2.9.0"
   }
 }

@@ -1,3 +1,109 @@
+import proj4 from 'proj4'
+import { mat3 } from 'gl-matrix'
+
+type Point = { x: number, y: number }
+type GCP = { src: Point, dest: Point }
+
+class Affine {
+  public matrix: mat3
+
+  constructor(gcps: GCP[]) {
+    if(gcps.length < 3) {
+      throw new Error('GCPs must be more than 3')
+    }
+    const A = mat3.create()
+    const B = mat3.create()
+
+    mat3.set(A, ...[
+      gcps[0].dest.x, gcps[1].dest.x, gcps[2].dest.x,
+      gcps[0].dest.y, gcps[1].dest.y, gcps[2].dest.y,
+      1,              1,              1,
+    ])
+    mat3.transpose(A, A)
+    mat3.set(B, ...[
+      gcps[0].src.x, gcps[1].src.x, gcps[2].src.x,
+      gcps[0].src.y, gcps[1].src.y, gcps[2].src.y,
+      1,             1,             1,
+    ]);
+    mat3.transpose(B, B)
+    mat3.invert(B, B)
+
+    const out = mat3.create()
+    mat3.multiply(out, A, B)
+    this.matrix = out
+  }
+
+  transform(point: Point, option = { inverse: false }) {
+    const inputMat3 = mat3.create()
+    const outputMat3 = mat3.create()
+    mat3.set(inputMat3, ...[
+      point.x, 0, 0,
+      point.y, 0, 0,
+      1,       0, 0,
+    ])
+    mat3.transpose(inputMat3, inputMat3)
+
+    const lefter_multiplier = mat3.create()
+    mat3.copy(lefter_multiplier, this.matrix)
+    if(option.inverse) {
+      mat3.invert(lefter_multiplier, lefter_multiplier)
+    }
+    mat3.multiply(outputMat3, lefter_multiplier, inputMat3)
+    const x = outputMat3[0]
+    const y = outputMat3[1]
+    return { x, y }
+  }
+}
+
+proj4.defs("ESRI:54009","+proj=moll +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs +type=crs");
+const bbox_epsg3857 = {
+  minX: -20037508.34,
+  minY: -20048966.1,
+  maxX: 20037508.34,
+  maxY: 20048966.1,
+  width: NaN,
+  height: NaN,
+}
+const bbox_esri54009 = {
+  minX: -18040095.7,
+  minY: -9020047.85,
+  maxX: 18040095.7,
+  maxY: 9020047.85,
+  width: NaN,
+  height: NaN,
+}
+bbox_epsg3857.width = bbox_epsg3857.maxX - bbox_epsg3857.minX
+bbox_epsg3857.height = bbox_epsg3857.maxY - bbox_epsg3857.minY
+bbox_esri54009.width = bbox_esri54009.maxX - bbox_esri54009.minX
+bbox_esri54009.height = bbox_esri54009.maxY - bbox_esri54009.minY
+const gcps = []
+
+if(bbox_esri54009.width > bbox_esri54009.height) {
+  const aspectRatio = bbox_esri54009.height / bbox_esri54009.width
+  gcps.push(...[
+    { src: { x: bbox_esri54009.minX, y: bbox_esri54009.minY }, dest: { x: bbox_epsg3857.minX, y: bbox_epsg3857.minY + (bbox_epsg3857.height - bbox_epsg3857.width * aspectRatio) / 2 } },
+    { src: { x: bbox_esri54009.maxX, y: bbox_esri54009.minY }, dest: { x: bbox_epsg3857.maxX, y: bbox_epsg3857.minY + (bbox_epsg3857.height - bbox_epsg3857.width * aspectRatio) / 2 } },
+    { src: { x: bbox_esri54009.maxX, y: bbox_esri54009.maxY }, dest: { x: bbox_epsg3857.maxX, y: bbox_epsg3857.maxY - (bbox_epsg3857.height - bbox_epsg3857.width * aspectRatio) / 2 } },
+  ])
+} else {
+  const aspectRatio = bbox_esri54009.width / bbox_esri54009.height
+  gcps.push(...[
+    { src: { x: bbox_esri54009.minX, y: bbox_esri54009.minY }, dest: { x: bbox_epsg3857.minX + (bbox_epsg3857.width - bbox_epsg3857.height * aspectRatio) / 2, y: bbox_epsg3857.minY } },
+    { src: { x: bbox_esri54009.maxX, y: bbox_esri54009.minY }, dest: { x: bbox_epsg3857.minX + (bbox_epsg3857.width - bbox_epsg3857.height * aspectRatio) / 2, y: bbox_epsg3857.minY } },
+    { src: { x: bbox_esri54009.maxX, y: bbox_esri54009.maxY }, dest: { x: bbox_epsg3857.maxX - (bbox_epsg3857.width - bbox_epsg3857.height * aspectRatio) / 2, y: bbox_epsg3857.maxY } },
+  ])
+}
+
+const affine = new Affine(gcps)
+
+
+const transform = ([ x, y ]: number[], x_shift = 0) => {
+  const shifted_coord = [x + x_shift, y]
+  const [src_x, src_y] = proj4('EPSG:4326', 'ESRI:54009', shifted_coord)
+  const { x: dest_x, y: dest_y } = affine.transform({ x: src_x, y: src_y })
+  const projected_coord = proj4('EPSG:3857', 'EPSG:4326', [dest_x, dest_y])
+  return [projected_coord[0], projected_coord[1]]
+}
 
 const latLines = Array.from({ length: 180 / 2 }, (_, degree) => ({
   type: 'Feature',
@@ -9,12 +115,12 @@ const latLines = Array.from({ length: 180 / 2 }, (_, degree) => ({
   geometry: {
     type: 'LineString',
     coordinates: [
-      [-180, degree * 2 - 90],
-      [180, degree * 2 - 90],
+      transform([-180, degree * 2 - 90]),
+      transform([180, degree * 2 - 90]),
     ],
   },
 }))
-const lngLines = Array.from({ length: 360 / 2 }, (_, degree) => ({
+const lngLines = Array.from({ length: 1 + 360 / 2 }, (_, degree) => ({
   type: 'Feature',
   properties: {
     isLat: false,
@@ -23,10 +129,11 @@ const lngLines = Array.from({ length: 360 / 2 }, (_, degree) => ({
   },
   geometry: {
     type: 'LineString',
-    coordinates: [
-      [degree * 2 - 180, -90],
-      [degree * 2 - 180, 90],
-    ],
+    coordinates: Array.from(
+      { length: 180 },
+      // 地球を回って変にならないように気持ちオフセットする
+      (_, interpolate) => (transform([degree * 2 - 180 + (degree * 2 - 180 > 0 ? 0.0001 : -0.0001), interpolate - 90], -135)),
+    )
   },
 }))
 
@@ -304,7 +411,97 @@ const observatories = {
 }
 
 const subLocations = {
-
+  ラワーグ: {
+    lat: 18.195278,
+    lng: 120.591944,
+  },
+  バグァン島: {
+    lat: 18.133333,
+    lng: 145.8,
+  },
+  サイパン島: {
+    lat: 15.180833,
+    lng: 145.755833
+  },
+  南昌: {
+    lat: 28.683333,
+    lng: 115.883333,
+  },
+  スワトワ: {
+    lat: 23.366667,
+    lng: 116.7},
+  温州: {
+    lat: 27.999167,
+    lng: 120.656111,
+  },
+  台中: {
+    lat: 24.15,
+    lng: 120.666667,
+  },
+  沖の鳥島: {
+    lat: 20.425549,
+    lng: 136.081151,
+  },
+  硫黄島: {
+    lat: 24.758056,
+    lng: 141.287222,
+  },
+  天津: {
+    lat: 39.123611,
+    lng: 117.198056
+  },
+  徐州: {
+    lat: 34.266667,
+    lng: 117.166667,
+  },
+  南京: {
+    lat: 32.05,
+    lng: 118.766667,
+  },
+  煙台: {
+    lat: 37.4,
+    lng: 121.266667,
+  },
+  杭州: {
+    lat: 30.25,
+    lng: 120.166667,
+  },
+  インチョン: {
+    lat: 37.483333,
+    lng: 126.633333,
+  },
+  ポハン: {
+    lat: 36.019,
+    lng: 129.343472,
+  },
+  鳥島: {
+    lat: 30.483889,
+    lng: 140.303056,
+  },
+  ハイラル: {
+    lat: 49.2115,
+    lng: 119.730164,
+  },
+  瀋陽: {
+    lat: 41.795556,
+    lng: 123.448056,
+  },
+  営口: {
+    lat: 40.6723064,
+    lng: 122.2467506,
+  },
+  チタ: {
+    lat: 52.05,
+    lng: 113.466667,
+  },
+  アレクサンドロフコフ: {
+    lat: 50.9,
+    lng: 142.15,
+  },
+  オゼルナヤ: {
+    lat: 51.4789404,
+    lng: 156.5052645
+  },
 }
 
 const observatoryPoints = {
@@ -317,7 +514,21 @@ const observatoryPoints = {
     },
     geometry: {
       type: 'Point',
-      coordinates: [lng, lat],
+      coordinates: transform([lng, lat], -135),
+    },
+  })),
+}
+
+const subLocationPoints = {
+  type: 'FeatureCollection',
+  features: Object.entries(subLocations).map(([name, { lat, lng }]) => ({
+    type: 'Feature',
+    properties: {
+      name,
+    },
+    geometry: {
+      type: 'Point',
+      coordinates: transform([lng, lat], -135),
     },
   })),
 }
@@ -328,15 +539,16 @@ export const style = {
   sprite: "https://api.geolonia.com/v1/sprites/basic-v1",
   glyphs: "https://glyphs.geolonia.com/{fontstack}/{range}.pbf",
   sources: {
-    ne: { type: 'vector', tiles: ['http://127.0.0.1:8080/tiles/{z}/{x}/{y}.pbf'] },
+    ne: { type: 'vector', tiles: ['http://127.0.0.1:8080/tiles/{z}/{x}/{y}.pbf'], maxzoom: 5 },
     'latlng-lines': { type: 'geojson', data: latlngLines },
     'observatory-points': { type: 'geojson', data: observatoryPoints },
+    'sub-location-points': { type: 'geojson', data: subLocationPoints },
   },
   layers: [
     {
       id: 'ne-land',
       source: "ne",
-      "source-layer": "ne_10m_land",
+      "source-layer": "ne_land",
       type: "fill",
       paint: {
         "fill-color": "rgb(248, 221, 203)",
@@ -346,8 +558,33 @@ export const style = {
     {
       id: 'ne-land-outline',
       source: "ne",
-      "source-layer": "ne_10m_land",
+      "source-layer": "ne_land",
       type: "line",
+      paint: {
+        "line-color": "rgb(225, 111, 76)",
+        "line-opacity": 1,
+      },
+    },
+    {
+      id: 'ne-river',
+      source: "ne",
+      "source-layer": "ne_river",
+      type: "line",
+      filter: [
+        "any",
+        ["==", ["get", "name_ja"], "長江"],
+        ["==", ["get", "name_ja"], "黄河"],
+        ["==", ["get", "name_ja"], "贛江"],
+        ["==", ["get", "name_ja"], "漢江"],
+        ["==", ["get", "name_ja"], "遼河"],
+        ["==", ["get", "name_ja"], "西遼河"],
+        ["==", ["get", "name_ja"], "シラムレン川"],
+        ["==", ["get", "name_ja"], "アムール川"],
+        ["==", ["get", "name_ja"], "松花江"],
+        ["==", ["get", "name_ja"], "インゴダ川"],
+        ["==", ["get", "name_ja"], "シルカ川"],
+        ["==", ["get", "name_ja"], "オノン川"],
+      ],
       paint: {
         "line-color": "rgb(225, 111, 76)",
         "line-opacity": 1,
@@ -396,11 +633,46 @@ export const style = {
       layout: {
         'text-field': ['get', 'name'],
         'text-size': 16,
-        'text-offset': [0, 1.3],
+        'text-offset': [0, 1],
+        'text-variable-anchor': ['bottom', 'top', 'left', 'right'],
       },
       paint: {
         'text-color': 'rgb(225, 111, 76)',
+        'text-halo-color': 'white',
+        'text-halo-width': 1,
       }
-    }
+    },
+    {
+      id: 'sub-location-points',
+      type: 'circle',
+      source: 'sub-location-points',
+      paint: {
+        'circle-radius': 4,
+        'circle-color': 'rgb(225, 111, 76)',
+      },
+    },
+    {
+      id: 'sub-location-points-name',
+      type: 'symbol',
+      source: 'sub-location-points',
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-size': 16,
+        'text-offset': [0, 1],
+        'text-variable-anchor': ['bottom', 'top', 'left', 'right'],
+      },
+      paint: {
+        'text-color': 'rgb(225, 111, 76)',
+        'text-halo-color': 'white',
+        'text-halo-width': 1,
+      }
+    },
   ],
 }
+
+export const maxBounds = [
+  [100, 8],
+  [187, 58],
+].map(([x, y]) => transform([x, y], -135))
+
+export const center = transform([135, 35], -135)
