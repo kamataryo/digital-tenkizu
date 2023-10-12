@@ -541,7 +541,7 @@ export const style = {
   sources: {
     ne: {
       type: 'vector',
-      tiles: ['http://127.0.0.1:8080/tiles/{z}/{x}/{y}.pbf'],
+      tiles: [`${window.location.origin + window.location.pathname}tiles/{z}/{x}/{y}.pbf`],
       maxzoom: 5,
     },
     'latlng-lines': { type: 'geojson', data: latlngLines },
