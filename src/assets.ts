@@ -539,7 +539,11 @@ export const style = {
   sprite: "https://api.geolonia.com/v1/sprites/basic-v1",
   glyphs: "https://glyphs.geolonia.com/{fontstack}/{range}.pbf",
   sources: {
-    ne: { type: 'vector', tiles: ['http://127.0.0.1:8080/tiles/{z}/{x}/{y}.pbf'], maxzoom: 5 },
+    ne: {
+      type: 'vector',
+      tiles: ['http://127.0.0.1:8080/tiles/{z}/{x}/{y}.pbf'],
+      maxzoom: 5,
+    },
     'latlng-lines': { type: 'geojson', data: latlngLines },
     'observatory-points': { type: 'geojson', data: observatoryPoints },
     'sub-location-points': { type: 'geojson', data: subLocationPoints },
